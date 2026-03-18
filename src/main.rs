@@ -1,3 +1,4 @@
+use base64::Engine;
 use reqwest::header::{HeaderMap, HeaderValue};
 use rsa::{
     pkcs1::DecodeRsaPrivateKey,
@@ -56,7 +57,7 @@ impl KalshiClient {
     }
 
     /// Build the authentication headers required by the Kalshi API.
-    /// Signature = RSA-PSS-sign( timestamp_ms + method + path ), hex-encoded.
+    /// Signature = RSA-PSS-sign( timestamp_ms + method + path ), base64-encoded.
     fn auth_headers(&self, method: &str, path: &str) -> HeaderMap {
         let timestamp_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -67,7 +68,7 @@ impl KalshiClient {
         let message = format!("{}{}{}", timestamp_ms, method, path);
         let mut rng = rand::thread_rng();
         let signature: Signature = self.signing_key.sign_with_rng(&mut rng, message.as_bytes());
-        let sig_hex = hex::encode(signature.to_bytes());
+        let sig_b64 = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
 
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -80,7 +81,7 @@ impl KalshiClient {
         );
         headers.insert(
             "KALSHI-ACCESS-SIGNATURE",
-            HeaderValue::from_str(&sig_hex).unwrap(),
+            HeaderValue::from_str(&sig_b64).unwrap(),
         );
         headers
     }
