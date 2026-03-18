@@ -1,42 +1,28 @@
 use reqwest::header::{HeaderMap, HeaderValue};
 use rsa::{
     pkcs8::DecodePrivateKey,
-    pss::{SigningKey, Signature},
+    pss::{Signature, SigningKey},
     sha2::Sha256,
     signature::RandomizedSigner,
     signature::SignatureEncoding,
     RsaPrivateKey,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use std::io::{self, BufRead, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// ── Config ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct Config {
+    kalshi_access_key: String,
+}
 
 // ── Models ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 struct CreateSubaccountResponse {
     subaccount_number: u32,
-}
-
-#[derive(Debug, Deserialize)]
-struct Subaccount {
-    subaccount_number: u32,
-}
-
-#[derive(Debug, Deserialize)]
-struct ListSubaccountsResponse {
-    subaccounts: Vec<Subaccount>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Balance {
-    balance: i64, // in cents
-}
-
-#[derive(Debug, Serialize)]
-struct TransferRequest {
-    from_subaccount: u32,
-    to_subaccount: u32,
-    amount: i64, // in cents
 }
 
 // ── Kalshi Client ───────────────────────────────────────────────────────────
@@ -64,7 +50,7 @@ impl KalshiClient {
     }
 
     /// Build the authentication headers required by the Kalshi API.
-    /// Signature = RSA-PSS-sign( timestamp + method + path )
+    /// Signature = RSA-PSS-sign( timestamp_ms + method + path ), hex-encoded.
     fn auth_headers(&self, method: &str, path: &str) -> HeaderMap {
         let timestamp_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -93,8 +79,6 @@ impl KalshiClient {
         headers
     }
 
-    // ── Subaccount Operations ───────────────────────────────────────────
-
     /// Create a new subaccount (up to 32 per user).
     async fn create_subaccount(&self) -> anyhow::Result<CreateSubaccountResponse> {
         let path = "/portfolio/subaccounts";
@@ -106,78 +90,16 @@ impl KalshiClient {
             .post(&url)
             .headers(headers)
             .send()
-            .await?
-            .error_for_status()?
-            .json::<CreateSubaccountResponse>()
             .await?;
 
-        Ok(resp)
-    }
-
-    /// List all subaccounts.
-    async fn list_subaccounts(&self) -> anyhow::Result<ListSubaccountsResponse> {
-        let path = "/portfolio/subaccounts";
-        let url = format!("{}{}", BASE_URL, path);
-        let headers = self.auth_headers("GET", path);
-
-        let resp = self
-            .http
-            .get(&url)
-            .headers(headers)
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<ListSubaccountsResponse>()
-            .await?;
-
-        Ok(resp)
-    }
-
-    /// Get balance for a specific subaccount.
-    async fn get_subaccount_balance(&self, subaccount_number: u32) -> anyhow::Result<Balance> {
-        let path = format!("/portfolio/subaccounts/{}/balance", subaccount_number);
-        let url = format!("{}{}", BASE_URL, path);
-        let headers = self.auth_headers("GET", &path);
-
-        let resp = self
-            .http
-            .get(&url)
-            .headers(headers)
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<Balance>()
-            .await?;
-
-        Ok(resp)
-    }
-
-    /// Transfer funds between two subaccounts.
-    async fn transfer_between_subaccounts(
-        &self,
-        from: u32,
-        to: u32,
-        amount_cents: i64,
-    ) -> anyhow::Result<()> {
-        let path = "/portfolio/subaccounts/transfer";
-        let url = format!("{}{}", BASE_URL, path);
-        let headers = self.auth_headers("POST", path);
-
-        let body = TransferRequest {
-            from_subaccount: from,
-            to_subaccount: to,
-            amount: amount_cents,
-        };
-
-        self.http
-            .post(&url)
-            .headers(headers)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-
-        Ok(())
+        let status = resp.status();
+        if status == 201 {
+            let body = resp.json::<CreateSubaccountResponse>().await?;
+            Ok(body)
+        } else {
+            let text = resp.text().await.unwrap_or_else(|e| format!("Failed to read response body: {}", e));
+            anyhow::bail!("HTTP {}: {}", status, text);
+        }
     }
 }
 
@@ -185,47 +107,61 @@ impl KalshiClient {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Load credentials from environment variables
-    let api_key = std::env::var("KALSHI_API_KEY").expect("Set KALSHI_API_KEY env var");
-    let private_key_pem = std::fs::read_to_string(
-        std::env::var("KALSHI_PRIVATE_KEY_PATH")
-            .unwrap_or_else(|_| "kalshi_private_key.pem".to_string()),
-    )
-    .expect("Could not read private key PEM file");
+    // Load API key from config.json
+    let config_str = std::fs::read_to_string("config.json")
+        .expect("Could not read config.json — please create it from config.json.example");
+    let config: Config =
+        serde_json::from_str(&config_str).expect("Failed to parse config.json");
 
-    let client = KalshiClient::new(&api_key, &private_key_pem);
+    // Load RSA private key from kalshi-private-key.pem
+    let private_key_pem = std::fs::read_to_string("kalshi-private-key.pem")
+        .expect("Could not read kalshi-private-key.pem");
 
-    // 1. Create a subaccount
-    println!("Creating subaccount…");
-    let created = client.create_subaccount().await?;
-    println!("  → subaccount_number = {}", created.subaccount_number);
+    let client = KalshiClient::new(&config.kalshi_access_key, &private_key_pem);
 
-    // 2. List all subaccounts
-    println!("\nListing subaccounts…");
-    let list = client.list_subaccounts().await?;
-    for sa in &list.subaccounts {
-        println!("  • subaccount #{}", sa.subaccount_number);
+    println!("Kalshi Subaccount Manager");
+    println!("Type 'Create Sub' to create a subaccount, 'exit' or 'quit' to quit.");
+
+    let stdin = io::stdin();
+    loop {
+        print!("kalshi> ");
+        io::stdout().flush()?;
+
+        let mut line = String::new();
+        if stdin.lock().read_line(&mut line)? == 0 {
+            // EOF (e.g. Ctrl-D)
+            break;
+        }
+
+        let cmd = line.trim().to_lowercase();
+        match cmd.as_str() {
+            "create sub" => {
+                println!("Creating subaccount...");
+                match client.create_subaccount().await {
+                    Ok(resp) => {
+                        println!(
+                            "Subaccount created! subaccount_number = {}",
+                            resp.subaccount_number
+                        );
+                    }
+                    Err(e) => {
+                        println!("Error: {}", e);
+                    }
+                }
+            }
+            "exit" | "quit" => {
+                println!("Goodbye!");
+                break;
+            }
+            "" => {}
+            other => {
+                println!("Unknown command: '{}'", other);
+                println!("Available commands:");
+                println!("  Create Sub  — create the next subaccount (up to 32)");
+                println!("  exit / quit — exit the program");
+            }
+        }
     }
-
-    // 3. Check balance on the new subaccount
-    println!(
-        "\nGetting balance for subaccount #{}…",
-        created.subaccount_number
-    );
-    let balance = client
-        .get_subaccount_balance(created.subaccount_number)
-        .await?;
-    println!("  → balance = {} cents", balance.balance);
-
-    // 4. Transfer $10.00 (1000 cents) from subaccount 0 (main) to the new one
-    println!(
-        "\nTransferring 1000 cents from main → subaccount #{}…",
-        created.subaccount_number
-    );
-    client
-        .transfer_between_subaccounts(0, created.subaccount_number, 1000)
-        .await?;
-    println!("  → transfer complete");
 
     Ok(())
 }

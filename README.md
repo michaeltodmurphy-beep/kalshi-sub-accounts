@@ -1,32 +1,46 @@
 # kalshi-sub-accounts
 
-A Rust client for managing subaccounts via the [Kalshi Trading API](https://docs.kalshi.com/welcome).
+An interactive CLI tool written in Rust for managing [Kalshi](https://kalshi.com) subaccounts via the [Kalshi Trading API](https://docs.kalshi.com/welcome).
 
 ## What it does
 
-This project demonstrates how to authenticate with the Kalshi API using RSA-PSS signatures and interact with the subaccount endpoints:
+This program connects to the Kalshi API using RSA-PSS authentication and lets you manage subaccounts interactively from the command line.
 
-- **Create a subaccount** — up to 32 subaccounts per user
-- **List all subaccounts** — view every subaccount on your account
-- **Get subaccount balance** — check the balance (in cents) of any subaccount
-- **Transfer funds between subaccounts** — move money between subaccounts, including to/from your main account (subaccount 0)
+- **Create a subaccount** — type `Create Sub` at the prompt to create the next subaccount (up to 32 per user)
 
 ## Prerequisites
 
 - [Rust toolchain](https://rustup.rs/) (stable, edition 2021)
 - A Kalshi API key
-- An RSA private key (PEM format) associated with your Kalshi API key
+- An RSA private key (PKCS#8 PEM format) associated with your Kalshi API key
 
-## Configuration
+## Setup
 
-Set the following environment variables before running:
+### 1. Configure your API key
+
+Copy the example config file and fill in your API key:
 
 ```bash
-export KALSHI_API_KEY="your-api-key-id"
-export KALSHI_PRIVATE_KEY_PATH="path/to/kalshi_private_key.pem"
+cp config.json.example config.json
 ```
 
-`KALSHI_PRIVATE_KEY_PATH` defaults to `kalshi_private_key.pem` in the current directory if not set.
+Edit `config.json`:
+
+```json
+{
+  "kalshi_access_key": "your-api-key-here"
+}
+```
+
+### 2. Place your private key
+
+Copy your RSA private key (PKCS#8 PEM format) into the project directory as:
+
+```
+kalshi-private-key.pem
+```
+
+Both `config.json` and `*.pem` files are listed in `.gitignore` and will never be committed.
 
 ## Running
 
@@ -34,13 +48,23 @@ export KALSHI_PRIVATE_KEY_PATH="path/to/kalshi_private_key.pem"
 cargo run
 ```
 
+## Available commands
+
+| Command       | Description                                    |
+|---------------|------------------------------------------------|
+| `Create Sub`  | Create the next subaccount (up to 32 allowed)  |
+| `exit`        | Exit the program                               |
+| `quit`        | Exit the program                               |
+
+Commands are case-insensitive.
+
 ## Notes
 
-- **Amounts are in cents** (integer). For example, `1000` = $10.00.
-- **Subaccount 0** is your main/root account.
-- You can create **up to 32 subaccounts** per user.
-- Authentication uses RSA-PSS (SHA-256). Each request is signed with `timestamp_ms + HTTP_METHOD + path` and the signature is sent as a hex-encoded header.
+- You can create **up to 32 subaccounts** per Kalshi account.
+- Authentication uses RSA-PSS (SHA-256). Each request is signed with `timestamp_ms + HTTP_METHOD + path` and the signature is hex-encoded.
+- Credentials are loaded from `config.json` (API key) and `kalshi-private-key.pem` (private key) — never from environment variables.
 
 ## API Reference
 
 - [Kalshi API Documentation](https://docs.kalshi.com/welcome)
+
