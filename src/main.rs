@@ -27,7 +27,7 @@ struct CreateSubaccountResponse {
 
 // ── Kalshi Client ───────────────────────────────────────────────────────────
 
-const BASE_URL: &str = "https://api.elections.kalshi.com/trade-api/v2";
+const BASE_URL: &str = "https://api.elections.kalshi.com";
 
 struct KalshiClient {
     api_key: String,
@@ -81,7 +81,7 @@ impl KalshiClient {
 
     /// Create a new subaccount (up to 32 per user).
     async fn create_subaccount(&self) -> anyhow::Result<CreateSubaccountResponse> {
-        let path = "/portfolio/subaccounts";
+        let path = "/trade-api/v2/portfolio/subaccounts";
         let url = format!("{}{}", BASE_URL, path);
         let headers = self.auth_headers("POST", path);
 
@@ -89,6 +89,8 @@ impl KalshiClient {
             .http
             .post(&url)
             .headers(headers)
+            .header("Content-Type", "application/json")
+            .body("{}")
             .send()
             .await?;
 
