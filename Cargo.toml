@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 hex = "0.4"
+pkcs1 = { version = "0.7.5", features = ["pem"] }
 rand = "0.8"
 reqwest = { version = "0.12", features = ["json"] }
 rsa = { version = "0.9", features = ["sha2"] }
