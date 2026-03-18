@@ -627,6 +627,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
+ "pkcs1",
  "rand",
  "reqwest",
  "rsa",

@@ -1,6 +1,6 @@
 use reqwest::header::{HeaderMap, HeaderValue};
 use rsa::{
-    pkcs8::DecodePrivateKey,
+    pkcs1::DecodeRsaPrivateKey,
     pss::{Signature, SigningKey},
     sha2::Sha256,
     signature::RandomizedSigner,
@@ -38,8 +38,8 @@ struct KalshiClient {
 impl KalshiClient {
     /// Create a new client from an API key and a PEM-encoded RSA private key.
     fn new(api_key: &str, private_key_pem: &str) -> Self {
-        let rsa_key = RsaPrivateKey::from_pkcs8_pem(private_key_pem)
-            .expect("Failed to parse RSA private key PEM");
+        let rsa_key = RsaPrivateKey::from_pkcs1_pem(private_key_pem)
+            .expect("Failed to parse RSA private key PEM (expected PKCS#1 '-----BEGIN RSA PRIVATE KEY-----')");
         let signing_key = SigningKey::<Sha256>::new(rsa_key);
 
         Self {

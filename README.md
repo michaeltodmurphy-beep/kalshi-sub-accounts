@@ -12,7 +12,7 @@ This program connects to the Kalshi API using RSA-PSS authentication and lets yo
 
 - [Rust toolchain](https://rustup.rs/) (stable, edition 2021)
 - A Kalshi API key
-- An RSA private key (PKCS#8 PEM format) associated with your Kalshi API key
+- An RSA private key (**PKCS#1 PEM format**, header `-----BEGIN RSA PRIVATE KEY-----`) associated with your Kalshi API key
 
 ## Setup
 
@@ -34,7 +34,7 @@ Edit `config.json`:
 
 ### 2. Place your private key
 
-Copy your RSA private key (PKCS#8 PEM format) into the project directory as:
+Copy your RSA private key (**PKCS#1 PEM format**, with the header `-----BEGIN RSA PRIVATE KEY-----`) into the project directory as:
 
 ```
 kalshi-private-key.pem
